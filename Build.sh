@@ -146,7 +146,7 @@ cat > "${UNIFI_DIR}/db-init/03-create-users.js" <<JS
 JS
 
 # UniFi env file
-cat > "${UNIFI_DIR}/container-vars.env" <<ENV
+cat > "${UNIFI_DIR}/unifi-vars.env" <<ENV
 PUID=${PUID}
 PGID=${PGID}
 MONGO_USER=${MONGO_APP_USER}
@@ -156,9 +156,14 @@ MONGO_PORT=27017
 MONGO_DBNAME=unifi
 ENV
 
+# MongoDB env file
+cat > "${UNIFI_DIR}/mongodb-vars.env" <<ENV
+MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER}
+MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASS}
+ENV
+
 # Docker Compose
 cat > "${UNIFI_DIR}/docker-compose.yml" <<'YML'
-version: "3.8"
 services:
   unifi:
     container_name: unifi
@@ -179,7 +184,7 @@ services:
       - "6789:6789"        # Speed test (optional)
       # - "5514:5514/udp"  # Remote syslog (optional)
     env_file:
-      - container-vars.env
+      - unifi-vars.env
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./data:/config
@@ -192,18 +197,18 @@ services:
     hostname: unifi-mongodb
     image: mongo:4.4
     restart: unless-stopped
-    command: ["--bind_ip_all", "--replSet", "rs0"]
+    command: ["--bind_ip_all", "--replSet", "rs0", "--keyFile", "/etc/mongo-keyfile"]
     networks:
       - backend
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: "${MONGO_ROOT_USER}"
-      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASS}"
+    env_file:
+      - mongodb-vars.env
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./db:/data/db
       - ./db-init:/docker-entrypoint-initdb.d:ro
+      - ./db-keyfile/mongo-keyfile:/etc/mongo-keyfile:ro      
     healthcheck:
-      test: ["CMD", "mongo", "--quiet", "mongodb://localhost:27017/admin", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongo --quiet mongodb://$MONGO_INITDB_ROOT_USERNAME:$MONGO_INITDB_ROOT_PASSWORD@localhost:27017/admin --eval 'db.adminCommand(\"ping\")'"]
       interval: 10s
       timeout: 5s
       retries: 30
